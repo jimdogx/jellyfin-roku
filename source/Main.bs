@@ -28,6 +28,7 @@ sub Main (args as dynamic) as void
 
     m.scene = m.screen.CreateScene("JFScene")
     m.screen.show() ' vscode_rale_tracker_entry
+    'vscode_rdb_on_device_component_entry
 
     playstateTask = CreateObject("roSGNode", "PlaystateTask")
     playstateTask.id = "playstateTask"
@@ -47,7 +48,6 @@ sub Main (args as dynamic) as void
     sceneManager.callFunc("clearScenes")
 
     ' load home page
-    sceneManager.currentUser = m.global.session.user.name
     group = CreateHomeGroup()
     group.callFunc("loadLibraries")
     stopLoadingSpinner()
@@ -166,7 +166,7 @@ sub Main (args as dynamic) as void
                     m.global.queueManager.callFunc("clear") ' empty queue/playlist
                     m.global.queueManager.callFunc("resetShuffle") ' turn shuffle off
 
-                    if itemType = "episode" or itemType = "movie" or itemType = "video"
+                    if itemType = "episode" or itemType = "recording" or itemType = "movie" or itemType = "video"
                         quickplay.video(itemNode)
                         ' restore focus
                         if LCase(group.subtype()) = "tvepisodes"
@@ -212,6 +212,50 @@ sub Main (args as dynamic) as void
             end if
             elapsed = timeSpan.TotalMilliseconds() / 1000
             print "Quick Play finished loading in " + elapsed.toStr() + " seconds."
+        else if isNodeEvent(msg, "refreshSeasonDetailsData")
+            startLoadingSpinner()
+
+            currentScene = m.global.sceneManager.callFunc("getActiveScene")
+
+            if isValid(currentScene) and isValid(currentScene.objects) and isValid(currentScene.seasonData)
+                currentEpisode = m.global.queueManager.callFunc("getCurrentItem")
+
+                if isValid(currentScene.objects.Items) and isValid(currentEpisode) and isValid(currentEpisode.id)
+                    ' Find the object in the scene's data and update its json data
+                    for i = 0 to currentScene.objects.Items.count() - 1
+                        if LCase(currentScene.objects.Items[i].id) = LCase(currentEpisode.id)
+                            currentScene.objects.Items[i].json = api.users.GetItem(m.global.session.user.id, currentEpisode.id)
+                            m.global.queueManager.callFunc("setTopStartingPoint", currentScene.objects.Items[i].json.UserData.PlaybackPositionTicks)
+                            exit for
+                        end if
+                    end for
+                end if
+
+                seasonMetaData = ItemMetaData(currentScene.seasonData.id)
+                currentScene.seasonData = seasonMetaData.json
+                currentScene.episodeObjects = currentScene.objects
+                currentScene.callFunc("updateSeason")
+            end if
+
+            stopLoadingSpinner()
+        else if isNodeEvent(msg, "refreshMovieDetailsData")
+            startLoadingSpinner()
+
+            currentScene = m.global.sceneManager.callFunc("getActiveScene")
+
+            if isValid(currentScene) and isValid(currentScene.itemContent) and isValid(currentScene.itemContent.id)
+                ' Refresh movie detail data
+                currentScene.itemContent.json = api.users.GetItem(m.global.session.user.id, currentScene.itemContent.id)
+                movieMetaData = ItemMetaData(currentScene.itemContent.id)
+
+                ' Redraw movie poster
+                currentScene.newPosterImageURI = movieMetaData.posterURL
+
+                ' Set updated starting point for the queue item
+                m.global.queueManager.callFunc("setTopStartingPoint", currentScene.itemContent.json.UserData.PlaybackPositionTicks)
+            end if
+
+            stopLoadingSpinner()
         else if isNodeEvent(msg, "selectedItem")
             ' If you select a library from ANYWHERE, follow this flow
             selectedItem = msg.getData()
@@ -242,8 +286,8 @@ sub Main (args as dynamic) as void
                 else if selectedItemType = "UserView" or selectedItemType = "Folder" or selectedItemType = "Channel" or selectedItemType = "Boxset"
                     group = CreateItemGrid(selectedItem)
                     sceneManager.callFunc("pushScene", group)
-                else if selectedItemType = "Episode"
-                    ' User has selected a TV episode they want us to play
+                else if selectedItemType = "Episode" or LCase(selectedItemType) = "recording"
+                    ' User has selected a TV episode or Recording they want us to play
                     audio_stream_idx = 0
                     if isValid(selectedItem.selectedAudioStreamIndex) and selectedItem.selectedAudioStreamIndex > 0
                         audio_stream_idx = selectedItem.selectedAudioStreamIndex
@@ -282,7 +326,19 @@ sub Main (args as dynamic) as void
                     end if
 
                     ' Display playback options dialog
-                    if selectedItem.json.userdata.PlaybackPositionTicks > 0
+                    showPlaybackOptionDialog = false
+
+                    if isValid(selectedItem.json)
+                        if isValid(selectedItem.json.userdata)
+                            if isValid(selectedItem.json.userdata.PlaybackPositionTicks)
+                                if selectedItem.json.userdata.PlaybackPositionTicks > 0
+                                    showPlaybackOptionDialog = true
+                                end if
+                            end if
+                        end if
+                    end if
+
+                    if showPlaybackOptionDialog
                         dialog.close = true
                         m.global.queueManager.callFunc("hold", selectedItem)
                         playbackOptionDialog(selectedItem.json.userdata.PlaybackPositionTicks, selectedItem.json)
@@ -388,9 +444,9 @@ sub Main (args as dynamic) as void
             selectedIndex = msg.getData()
             screenContent = msg.getRoSGNode()
 
-            m.global.queueManager.callFunc("clear")
             m.global.queueManager.callFunc("resetShuffle")
-            m.global.queueManager.callFunc("push", screenContent.albumData.items[selectedIndex])
+            m.global.queueManager.callFunc("set", screenContent.albumData.items)
+            m.global.queueManager.callFunc("setPosition", selectedIndex)
             m.global.queueManager.callFunc("playQueue")
         else if isNodeEvent(msg, "playItem")
             ' User has selected audio they want us to play
@@ -470,7 +526,7 @@ sub Main (args as dynamic) as void
             startLoadingSpinner()
             node = getMsgPicker(msg)
             ' TODO - swap this based on target.mediatype
-            ' types: [ Series (Show), Episode, Movie, Audio, Person, Studio, MusicArtist ]
+            ' types: [ Series (Show), Episode, Movie, Audio, Person, Studio, MusicArtist, Recording ]
             if node.type = "Series"
                 group = CreateSeriesDetailsGroup(node.id)
             else if node.type = "Movie"
@@ -492,6 +548,9 @@ sub Main (args as dynamic) as void
                 group = CreateVideoPlayerGroup(node.id)
                 sceneManager.callFunc("pushScene", group)
             else if node.type = "Episode"
+                group = CreateVideoPlayerGroup(node.id)
+                sceneManager.callFunc("pushScene", group)
+            else if LCase(node.type) = "recording"
                 group = CreateVideoPlayerGroup(node.id)
                 sceneManager.callFunc("pushScene", group)
             else if node.type = "Audio"

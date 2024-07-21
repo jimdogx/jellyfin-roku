@@ -32,6 +32,7 @@ sub init()
     m.top.observeField("state", "onState")
     m.top.observeField("content", "onContentChange")
     m.top.observeField("selectedSubtitle", "onSubtitleChange")
+    m.top.observeField("audioIndex", "onAudioIndexChange")
 
     ' Custom Caption Function
     m.top.observeField("allowCaptions", "onAllowCaptionsChange")
@@ -87,6 +88,35 @@ sub handleChapterSkipAction(action as string)
         if gotoChapter < 0 then gotoChapter = 0
 
         m.top.seek = m.chapters[gotoChapter].StartPositionTicks / 10000000#
+        return
+    end if
+end sub
+
+' handleItemSkipAction: Handles user command to skip items
+'
+' @param {string} action - skip action to take
+sub handleItemSkipAction(action as string)
+    if action = "itemnext"
+        ' If there is something next in the queue, play it
+        if m.global.queueManager.callFunc("getPosition") < m.global.queueManager.callFunc("getCount") - 1
+            m.top.control = "stop"
+            m.global.sceneManager.callFunc("clearPreviousScene")
+            m.global.queueManager.callFunc("moveForward")
+            m.global.queueManager.callFunc("playQueue")
+        end if
+
+        return
+    end if
+
+    if action = "itemback"
+        ' If there is something previous in the queue, play it
+        if m.global.queueManager.callFunc("getPosition") > 0
+            m.top.control = "stop"
+            m.global.sceneManager.callFunc("clearPreviousScene")
+            m.global.queueManager.callFunc("moveBack")
+            m.global.queueManager.callFunc("playQueue")
+        end if
+
         return
     end if
 end sub
@@ -163,6 +193,12 @@ sub handleShowSubtitleMenuAction()
     m.top.selectSubtitlePressed = true
 end sub
 
+' handleShowAudioMenuAction: Handles action to show audio selection menu
+'
+sub handleShowAudioMenuAction()
+    m.top.selectAudioPressed = true
+end sub
+
 ' handleShowVideoInfoPopupAction: Handles action to show video info popup
 '
 sub handleShowVideoInfoPopupAction()
@@ -204,8 +240,18 @@ sub onOSDAction()
         return
     end if
 
+    if action = "showaudiomenu"
+        handleShowAudioMenuAction()
+        return
+    end if
+
     if action = "showvideoinfopopup"
         handleShowVideoInfoPopupAction()
+        return
+    end if
+
+    if action = "itemback" or action = "itemnext"
+        handleItemSkipAction(action)
         return
     end if
 end sub
@@ -256,8 +302,17 @@ end sub
 
 ' Event handler for when selectedSubtitle changes
 sub onSubtitleChange()
-    ' If the global caption mode is on, that means Roku can display the subtitles natively and doesn't need a video stop/start
-    if LCase(m.top.globalCaptionMode) = "on" then return
+    switchWithoutRefresh = true
+
+    if m.top.SelectedSubtitle <> -1
+        ' If the global caption mode is off, then Roku can't display the subtitles natively and needs a video stop/start
+        if LCase(m.top.globalCaptionMode) <> "on" then switchWithoutRefresh = false
+    end if
+
+    ' If previous sustitle was encoded, then we need to a video stop/start to change subtitle content
+    if m.top.previousSubtitleWasEncoded then switchWithoutRefresh = false
+
+    if switchWithoutRefresh then return
 
     ' Save the current video position
     m.global.queueManager.callFunc("setTopStartingPoint", int(m.top.position) * 10000000&)
@@ -265,6 +320,24 @@ sub onSubtitleChange()
     m.top.control = "stop"
 
     m.LoadMetaDataTask.selectedSubtitleIndex = m.top.SelectedSubtitle
+    m.LoadMetaDataTask.selectedAudioStreamIndex = m.top.audioIndex
+    m.LoadMetaDataTask.itemId = m.currentItem.id
+    m.LoadMetaDataTask.observeField("content", "onVideoContentLoaded")
+    m.LoadMetaDataTask.control = "RUN"
+end sub
+
+' Event handler for when audioIndex changes
+sub onAudioIndexChange()
+    ' Skip initial audio index setting
+    if m.top.position = 0 then return
+
+    ' Save the current video position
+    m.global.queueManager.callFunc("setTopStartingPoint", int(m.top.position) * 10000000&)
+
+    m.top.control = "stop"
+
+    m.LoadMetaDataTask.selectedSubtitleIndex = m.top.SelectedSubtitle
+    m.LoadMetaDataTask.selectedAudioStreamIndex = m.top.audioIndex
     m.LoadMetaDataTask.itemId = m.currentItem.id
     m.LoadMetaDataTask.observeField("content", "onVideoContentLoaded")
     m.LoadMetaDataTask.control = "RUN"
@@ -319,11 +392,38 @@ sub onVideoContentLoaded()
     m.top.container = videoContent[0].container
     m.top.mediaSourceId = videoContent[0].mediaSourceId
     m.top.fullSubtitleData = videoContent[0].fullSubtitleData
+    m.top.fullAudioData = videoContent[0].fullAudioData
     m.top.audioIndex = videoContent[0].audioIndex
     m.top.transcodeParams = videoContent[0].transcodeparams
     m.chapters = videoContent[0].chapters
+    m.top.showID = videoContent[0].showID
 
     m.osd.itemTitleText = m.top.content.title
+
+    ' If video is an episode, attempt to add season and episode numbers to OSD
+    if m.top.content.contenttype = 4
+        if isValid(videoContent[0].seasonNumber)
+            m.osd.seasonNumber = videoContent[0].seasonNumber
+        end if
+
+        if isValid(videoContent[0].episodeNumber)
+            m.osd.episodeNumber = videoContent[0].episodeNumber
+        end if
+
+        if isValid(videoContent[0].episodeNumberEnd)
+            m.osd.episodeNumberEnd = videoContent[0].episodeNumberEnd
+        end if
+    end if
+
+    ' Attempt to add logo to OSD
+    if isValidAndNotEmpty(videoContent[0].logoImage)
+        m.osd.logoImage = videoContent[0].logoImage
+
+        ' Don't show both the logo and the video title if this isn't an episode
+        if m.top.content.contenttype <> 4
+            m.osd.itemTitleText = ""
+        end if
+    end if
 
     populateChapterMenu()
 
@@ -338,7 +438,7 @@ sub onVideoContentLoaded()
     ' Allow default subtitles
     m.top.unobserveField("selectedSubtitle")
 
-    ' Set subtitleTrack property is subs are natively supported by Roku
+    ' Set subtitleTrack property if subs are natively supported by Roku
     selectedSubtitle = invalid
     for each subtitle in m.top.fullSubtitleData
         if subtitle.Index = videoContent[0].selectedSubtitle
@@ -350,7 +450,10 @@ sub onVideoContentLoaded()
     if isValid(selectedSubtitle)
         availableSubtitleTrackIndex = availSubtitleTrackIdx(selectedSubtitle.Track.TrackName)
         if availableSubtitleTrackIndex <> -1
-            m.top.subtitleTrack = m.top.availableSubtitleTracks[availableSubtitleTrackIndex].TrackName
+            if not selectedSubtitle.IsEncoded
+                m.top.globalCaptionMode = "On"
+                m.top.subtitleTrack = m.top.availableSubtitleTracks[availableSubtitleTrackIndex].TrackName
+            end if
         end if
     end if
 
@@ -401,6 +504,11 @@ sub onNextEpisodeDataLoaded()
     m.checkedForNextEpisode = true
 
     m.top.observeField("position", "onPositionChanged")
+
+    ' If there is no next episode, disable next episode button
+    if m.getNextEpisodeTask.nextEpisodeData.Items.count() <> 2
+        m.nextupbuttonseconds = 0
+    end if
 end sub
 
 '
@@ -515,7 +623,7 @@ sub onState(msg)
         m.top.backPressed = true
     else if m.top.state = "playing"
 
-        ' Check if next episde is available
+        ' Check if next episode is available
         if isValid(m.top.showID)
             if m.top.showID <> "" and not m.checkedForNextEpisode and m.top.content.contenttype = 4
                 m.getNextEpisodeTask.showID = m.top.showID

@@ -14,6 +14,7 @@ sub CreateVideoPlayerView()
     m.view.observeField("state", "onStateChange")
     m.view.observeField("selectPlaybackInfoPressed", "onSelectPlaybackInfoPressed")
     m.view.observeField("selectSubtitlePressed", "onSelectSubtitlePressed")
+    m.view.observeField("selectAudioPressed", "onSelectAudioPressed")
 
     mediaSourceId = m.global.queueManager.callFunc("getCurrentItem").mediaSourceId
 
@@ -32,18 +33,40 @@ end sub
 ' Event Handlers
 ' -----------------
 
+
+' onSelectAudioPressed: Display audio selection dialog
+'
+sub onSelectAudioPressed()
+    audioData = {
+        data: []
+    }
+
+    for each item in m.view.fullAudioData
+
+        audioStreamItem = {
+            "Index": item.Index,
+            "IsExternal": item.IsExternal,
+            "Track": {
+                "description": item.DisplayTitle
+            },
+            "Type": "audioselection"
+        }
+
+        if m.view.audioIndex = item.Index
+            audioStreamItem.selected = true
+        end if
+
+        audioData.data.push(audioStreamItem)
+    end for
+
+    m.global.sceneManager.callFunc("radioDialog", tr("Select Audio"), audioData)
+    m.global.sceneManager.observeField("returnData", "onSelectionMade")
+end sub
+
 ' User requested subtitle selection popup
 sub onSelectSubtitlePressed()
-    ' None is always first in the subtitle list
     subtitleData = {
-        data: [{
-            "Index": -1,
-            "IsExternal": false,
-            "Track": {
-                "description": "None"
-            },
-            "Type": "subtitleselection"
-        }]
+        data: []
     }
 
     for each item in m.view.fullSubtitleData
@@ -69,8 +92,23 @@ sub onSelectSubtitlePressed()
             end if
         end if
 
-        subtitleData.data.push(item)
+        ' Put the selected item at the top of the option list
+        if isValid(item.selected) and item.selected
+            subtitleData.data.Unshift(item)
+        else
+            subtitleData.data.push(item)
+        end if
     end for
+
+    ' Manually create the None option and place at top
+    subtitleData.data.Unshift({
+        "Index": -1,
+        "IsExternal": false,
+        "Track": {
+            "description": "None"
+        },
+        "Type": "subtitleselection"
+    })
 
     m.global.sceneManager.callFunc("radioDialog", tr("Select Subtitles"), subtitleData)
     m.global.sceneManager.observeField("returnData", "onSelectionMade")
@@ -85,6 +123,25 @@ sub onSelectionMade()
 
     if LCase(m.global.sceneManager.returnData.type) = "subtitleselection"
         processSubtitleSelection()
+        return
+    end if
+
+    if LCase(m.global.sceneManager.returnData.type) = "audioselection"
+        processAudioSelection()
+        return
+    end if
+end sub
+
+
+' processAudioSelection: Audio track selection handler
+'
+sub processAudioSelection()
+    selectedAudioTrack = m.global.sceneManager.returnData
+
+    if isValid(selectedAudioTrack)
+        if isValid(selectedAudioTrack.index)
+            m.view.audioIndex = selectedAudioTrack.index
+        end if
     end if
 end sub
 
@@ -98,6 +155,14 @@ sub processSubtitleSelection()
 
     ' The playbackData is now outdated and must be refreshed
     m.playbackData = invalid
+
+    ' Find previously selected subtitle and identify if it was encoded
+    for each item in m.view.fullSubtitleData
+        if item.index = m.view.selectedSubtitle
+            m.view.previousSubtitleWasEncoded = item.IsEncoded
+            exit for
+        end if
+    end for
 
     if LCase(m.selectedSubtitle.track.description) = "none"
         m.view.globalCaptionMode = "Off"

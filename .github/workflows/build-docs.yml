@@ -13,7 +13,7 @@ jobs:
       # Give the default GITHUB_TOKEN write permission to commit and push the changed files back to the repository.
       contents: write
     steps:
-      - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4
+      - uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4
         with:
           ref: ${{ github.head_ref }}
           token: ${{ secrets.JF_BOT_TOKEN }}
@@ -23,7 +23,7 @@ jobs:
         # TODO: fix jsdoc build errors then remove '|| true' from run command below
         run: npm run docs || true
       - name: Commit any changes back to the unstable branch
-        uses: stefanzweifel/git-auto-commit-action@8756aa072ef5b4a080af5dc8fef36c5d586e521d # v5
+        uses: stefanzweifel/git-auto-commit-action@8621497c8c39c72f3e2a999a26b4ca1b5058a842 # v5
         with:
           commit_message: Update API docs
           # use jellyfin-bot to commit the changes instead of the default github-actions[bot]

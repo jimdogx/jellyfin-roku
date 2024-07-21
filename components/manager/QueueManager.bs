@@ -125,6 +125,11 @@ sub playQueue()
         return
     end if
 
+    if nextItemMediaType = "audiobook"
+        CreateAudioPlayerView()
+        return
+    end if
+
     if nextItemMediaType = "musicvideo"
         CreateVideoPlayerView()
         return
@@ -141,6 +146,11 @@ sub playQueue()
     end if
 
     if nextItemMediaType = "episode"
+        CreateVideoPlayerView()
+        return
+    end if
+
+    if nextItemMediaType = "recording"
         CreateVideoPlayerView()
         return
     end if
@@ -246,9 +256,14 @@ end sub
 
 ' Set starting point for top item in the queue
 sub setTopStartingPoint(positionTicks)
+    if getCount() = 0 then return
     m.queue[0].startingPoint = positionTicks
 end sub
 
+' getItemType: Returns the media type of the passed item
+'
+' @param {dynamic} item - Item to evaluate
+' @return {string} indicating type of media item is
 function getItemType(item) as string
     if isValid(item) and isValid(item.json) and isValid(item.json.mediatype) and item.json.mediatype <> ""
         return LCase(item.json.mediatype)

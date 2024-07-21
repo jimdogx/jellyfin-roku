@@ -92,8 +92,7 @@ function LoginFlow()
                 startLoadingSpinner()
                 print "A public user was selected with username=" + userSelected
                 session.user.Update("name", userSelected)
-                regex = CreateObject("roRegex", "[^a-zA-Z0-9\ \-\_]", "")
-                session.user.Update("friendlyName", regex.ReplaceAll(userSelected, ""))
+
                 ' save userid to session
                 for each user in publicUsersNodes
                     if user.name = userSelected
@@ -159,8 +158,7 @@ function LoginFlow()
             print "Auth token found in registry"
             session.user.Update("authToken", myAuthToken)
             session.user.Update("name", myUsername)
-            regex = CreateObject("roRegex", "[^a-zA-Z0-9\ \-\_]", "")
-            session.user.Update("friendlyName", regex.ReplaceAll(myUsername, ""))
+
             print "Attempting to use API with auth token"
             currentUser = AboutMe()
             if currentUser = invalid
@@ -604,6 +602,7 @@ function CreateMovieDetailsGroup(movie as object) as dynamic
     ' start building MovieDetails view
     group = CreateObject("roSGNode", "MovieDetails")
     group.observeField("quickPlayNode", m.port)
+    group.observeField("refreshMovieDetailsData", m.port)
     group.overhangTitle = movie.title
     group.optionsAvailable = false
     group.trailerAvailable = false
@@ -782,6 +781,8 @@ function CreateSeasonDetailsGroup(series as object, season as object) as dynamic
     group.objects = TVEpisodes(series.id, season.id)
     group.episodeObjects = group.objects
     group.extrasObjects = TVSeasonExtras(season.id)
+
+    group.observeField("refreshSeasonDetailsData", m.port)
 
     ' watch for button presses
     group.observeField("selectedItem", m.port)

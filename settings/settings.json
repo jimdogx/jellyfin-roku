@@ -17,19 +17,6 @@
         "description": "Settings relating to playback and supported codec and media types.",
         "children": [
             {
-                "title": "Audio Codec Support",
-                "description": "Choose your preferred audio codec when transcoding multichannel audio.",
-                "children": [
-                    {
-                        "title": "DTS",
-                        "description": "Force all transcodes to use DTS instead of the default EAC3. The device must support DTS for this setting to have an effect.",
-                        "settingName": "playback.forceDTS",
-                        "type": "bool",
-                        "default": "false"
-                    }
-                ]
-            },
-            {
                 "title": "Bitrate Limit",
                 "description": "Configure the maximum playback bitrate.",
                 "children": [
@@ -188,6 +175,35 @@
                 "default": "30"
             },
             {
+                "title": "Preferred Audio Codec",
+                "description": "Use the selected audio codec for transcodes. If the device or stream does not support it, a fallback codec will be used.",
+                "settingName": "playback.preferredAudioCodec",
+                "type": "radio",
+                "default": "auto",
+                "options": [
+                    {
+                        "title": "Use system settings",
+                        "id": "auto"
+                    },
+                    {
+                        "title": "AAC",
+                        "id": "aac"
+                    },
+                    {
+                        "title": "DD (AC3)",
+                        "id": "ac3"
+                    },
+                    {
+                        "title": "DD+ (EAC3)",
+                        "id": "eac3"
+                    },
+                    {
+                        "title": "DTS",
+                        "id": "dts"
+                    }
+                ]
+            },
+            {
                 "title": "Text Subtitles Only",
                 "description": "Only display text subtitles to minimize transcoding.",
                 "settingName": "playback.subs.onlytext",
@@ -319,6 +335,13 @@
                                         "id": "MoviesGrid"
                                     }
                                 ]
+                            },
+                            {
+                                "title": "Community and Critical Ratings",
+                                "description": "Ratings for how good a movie is.",
+                                "settingName": "ui.movies.showRatings",
+                                "type": "bool",
+                                "default": "true"
                             }
                         ]
                     },
